@@ -1,0 +1,15 @@
+{
+  "name": "personal-record",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @personal-record/web --filter @personal-record/api dev",
+    "build": "pnpm --filter @personal-record/shared build && pnpm --filter @personal-record/api build && pnpm --filter @personal-record/web build",
+    "test": "pnpm --filter @personal-record/shared test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @personal-record/api exec prisma migrate deploy",
+    "db:seed": "pnpm --filter @personal-record/api prisma:seed",
+    "db:studio": "pnpm --filter @personal-record/api prisma:studio"
+  }
+}

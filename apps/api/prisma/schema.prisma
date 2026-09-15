@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum KpiType {
+  totalTime
+  totalRepeat
+}
+
+enum PeriodType {
+  day
+  week
+  twoWeek
+  month
+}
+
+enum SubjectEventStatus {
+  finish
+  miss
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  timezone  String    @default("Asia/Bangkok")
+  createdAt DateTime  @default(now())
+  projects  Project[]
+}
+
+model Project {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime  @default(now())
+  subjects  Subject[]
+
+  @@index([userId])
+}
+
+model Subject {
+  id         String          @id @default(uuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  name       String
+  kpiTarget  Int
+  kpiType    KpiType
+  periodType PeriodType
+  startDate  DateTime        @db.Date
+  link       String?
+  createdAt  DateTime        @default(now())
+  archivedAt DateTime?
+  logs       ProgressLog[]
+  events     SubjectEvent[]
+  kpiChanges KpiChange[]
+
+  @@index([projectId])
+}
+
+model ProgressLog {
+  id        String   @id @default(uuid())
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  amount    Int
+  loggedAt  DateTime
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([subjectId, loggedAt])
+}
+
+model SubjectEvent {
+  id          String              @id @default(uuid())
+  subjectId   String
+  subject     Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  status      SubjectEventStatus
+  periodStart DateTime            @db.Date
+  periodEnd   DateTime            @db.Date
+  achieved    Int
+  kpiSnapshot Int
+  createdAt   DateTime            @default(now())
+
+  @@unique([subjectId, periodStart])
+  @@index([subjectId, periodStart])
+}
+
+model KpiChange {
+  id        String   @id @default(uuid())
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  oldValue  Int
+  newValue  Int
+  createdAt DateTime @default(now())
+
+  @@index([subjectId, createdAt])
+}
