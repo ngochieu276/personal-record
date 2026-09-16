@@ -1,5 +1,5 @@
 import type { TimestampString } from "@prisma/orm-postgres/target/codec-types";
-import { db, type Db } from "./db.ts";
+import { type Db } from "./db.ts";
 import type { Models } from "./contract.d.ts";
 
 export type SubjectRow = Omit<
@@ -62,18 +62,32 @@ export async function getOwnedSubject(client: Db, userId: string, subjectId: str
   return subject;
 }
 
-export async function projectWithSubjectCount(projectId: string, userId: string) {
-  const row = await db.orm.public.Project.where({ id: projectId, userId })
-    .include("subjects", (subjects) => subjects.count())
-    .first();
+export async function countSubjectsForProject(client: Db, projectId: string): Promise<number> {
+  const rows = await client.orm.public.Subject.where({ projectId }).select("id").all();
+  return rows.length;
+}
 
-  if (!row) {
+export async function projectWithSubjectCount(client: Db, projectId: string, userId: string) {
+  const project = await client.orm.public.Project.where({ id: projectId, userId }).first();
+  if (!project) {
     return null;
   }
 
-  const { subjects, ...project } = row;
   return {
     ...hydrateProject(project),
-    _count: { subjects },
+    _count: { subjects: await countSubjectsForProject(client, projectId) },
   };
+}
+
+export async function listProjectsWithSubjectCounts(client: Db, userId: string) {
+  const projects = await client.orm.public.Project.where({ userId })
+    .orderBy((project) => project.createdAt.asc())
+    .all();
+
+  return Promise.all(
+    projects.map(async (project) => ({
+      ...hydrateProject(project),
+      _count: { subjects: await countSubjectsForProject(client, project.id) },
+    })),
+  );
 }

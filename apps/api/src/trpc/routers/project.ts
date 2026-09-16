@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hydrateProject, projectWithSubjectCount } from "../../prisma/models.ts";
+import { hydrateProject, listProjectsWithSubjectCounts, projectWithSubjectCount } from "../../prisma/models.ts";
 import { badRequest, notFound } from "../trpc.ts";
 import { publicProcedure, router } from "../trpc.ts";
 
@@ -13,18 +13,10 @@ async function ownedProject(ctx: { db: typeof import("../../prisma/db.ts").db; u
 
 export const projectRouter = router({
   list: publicProcedure.query(async ({ ctx }) => {
-    const rows = await ctx.db.orm.public.Project.where({ userId: ctx.user.id })
-      .include("subjects", (subjects) => subjects.count())
-      .orderBy((project) => project.createdAt.asc())
-      .all();
-
-    return rows.map(({ subjects, ...project }) => ({
-      ...hydrateProject(project),
-      _count: { subjects },
-    }));
+    return listProjectsWithSubjectCounts(ctx.db, ctx.user.id);
   }),
   get: publicProcedure.input(z.object({ id: z.string().uuid() })).query(async ({ ctx, input }) => {
-    const project = await projectWithSubjectCount(input.id, ctx.user.id);
+    const project = await projectWithSubjectCount(ctx.db, input.id, ctx.user.id);
     if (!project) {
       notFound("Project not found");
     }
@@ -52,7 +44,7 @@ export const projectRouter = router({
       return hydrateProject(project);
     }),
   delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    const project = await projectWithSubjectCount(input.id, ctx.user.id);
+    const project = await projectWithSubjectCount(ctx.db, input.id, ctx.user.id);
     if (!project) {
       notFound("Project not found");
     }
