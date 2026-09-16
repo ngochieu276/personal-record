@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 const root = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
+  envDir: path.resolve(root, "../.."),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -15,11 +16,5 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: {
-      "/trpc": {
-        target: "http://localhost:4000",
-        changeOrigin: true,
-      },
-    },
   },
 });

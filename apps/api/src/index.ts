@@ -1,11 +1,13 @@
+import "dotenv/config";
 import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
 import Fastify from "fastify";
+import { webOrigins } from "./env.ts";
 import { createContext } from "./trpc/context.ts";
 import { appRouter, type AppRouter } from "./trpc/router.ts";
 
 const port = Number(process.env.PORT ?? 4000);
-const origin = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+const origins = webOrigins();
 
 const server = Fastify({
   logger: true,
@@ -13,7 +15,7 @@ const server = Fastify({
 });
 
 await server.register(cors, {
-  origin,
+  origin: origins,
   credentials: true,
 });
 
