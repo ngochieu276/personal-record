@@ -66,12 +66,12 @@ export async function closePastPeriodsForUser(
   timeZone: string,
   now = new Date(),
 ): Promise<void> {
-  const subjects = await db.orm.public.Subject.include("project")
-    .where((subject) => subject.archivedAt.eq(null))
-    .all();
+  const projects = await db.orm.public.Project.where({ userId }).select("id").all();
+  const projectIds = new Set(projects.map((project) => project.id));
+  const subjects = await db.orm.public.Subject.where((subject) => subject.archivedAt.eq(null)).all();
 
   for (const subject of subjects) {
-    if (subject.project.userId !== userId) {
+    if (!projectIds.has(subject.projectId)) {
       continue;
     }
     await closePastPeriods(db, subject, timeZone, now);

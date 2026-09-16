@@ -2,7 +2,7 @@ import { alignToPeriodStart, KPI_TYPES, PERIOD_TYPES, prismaDateToYmd, type Peri
 import { z } from "zod";
 import { closePastPeriods } from "../../domain/closePastPeriods.ts";
 import { getSubjectView } from "../../domain/subjectView.ts";
-import { nowIso, type SubjectRow } from "../../prisma/models.ts";
+import { getOwnedSubject, nowIso, type SubjectRow } from "../../prisma/models.ts";
 import { badRequest, notFound, publicProcedure, router } from "../trpc.ts";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -31,8 +31,8 @@ async function ownedSubject(
   ctx: { db: typeof import("../../prisma/db.ts").db; user: { id: string } },
   id: string,
 ): Promise<SubjectRow> {
-  const subject = await ctx.db.orm.public.Subject.where({ id }).include("project").first();
-  if (!subject || subject.project.userId !== ctx.user.id) {
+  const subject = await getOwnedSubject(ctx.db, ctx.user.id, id);
+  if (!subject) {
     notFound("Subject not found");
   }
   return subject;

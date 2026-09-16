@@ -1,5 +1,5 @@
 import type { TimestampString } from "@prisma/orm-postgres/target/codec-types";
-import { db } from "./db.ts";
+import { db, type Db } from "./db.ts";
 import type { Models } from "./contract.d.ts";
 
 export type SubjectRow = Omit<
@@ -46,6 +46,20 @@ export function hydrateSubject(subject: SubjectRow) {
     createdAt: asDate(subject.createdAt),
     archivedAt: asDateOrNull(subject.archivedAt),
   };
+}
+
+export async function getOwnedSubject(client: Db, userId: string, subjectId: string): Promise<SubjectRow | null> {
+  const subject = await client.orm.public.Subject.where({ id: subjectId }).first();
+  if (!subject) {
+    return null;
+  }
+
+  const project = await client.orm.public.Project.where({ id: subject.projectId, userId }).first();
+  if (!project) {
+    return null;
+  }
+
+  return subject;
 }
 
 export async function projectWithSubjectCount(projectId: string, userId: string) {

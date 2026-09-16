@@ -7,15 +7,15 @@ import {
 import { z } from "zod";
 import { closePastPeriods } from "../../domain/closePastPeriods.ts";
 import { getSubjectView } from "../../domain/subjectView.ts";
-import { asDate, asTimestamp, type SubjectRow } from "../../prisma/models.ts";
+import { asDate, asTimestamp, getOwnedSubject, type SubjectRow } from "../../prisma/models.ts";
 import { badRequest, notFound, publicProcedure, router } from "../trpc.ts";
 
 async function ownedSubject(
   ctx: { db: typeof import("../../prisma/db.ts").db; user: { id: string; timezone: string } },
   id: string,
 ): Promise<SubjectRow> {
-  const subject = await ctx.db.orm.public.Subject.where({ id }).include("project").first();
-  if (!subject || subject.project.userId !== ctx.user.id) {
+  const subject = await getOwnedSubject(ctx.db, ctx.user.id, id);
+  if (!subject) {
     notFound("Subject not found");
   }
   return subject;
@@ -79,7 +79,7 @@ export const logRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const log = await ctx.db.orm.public.ProgressLog.where({ id: input.id }).include("subject").first();
+      const log = await ctx.db.orm.public.ProgressLog.where({ id: input.id }).first();
       if (!log) {
         notFound("Log not found");
       }
