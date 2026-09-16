@@ -63,6 +63,23 @@ function clipStart(start: DateYmd, subjectStart: DateYmd): DateYmd {
   return start < subjectStart ? subjectStart : start;
 }
 
+/** First calendar day of the period that contains `date` (not clipped to a subject startDate). */
+export function alignToPeriodStart(date: DateYmd, periodType: PeriodType): DateYmd {
+  switch (periodType) {
+    case "day":
+    case "twoWeek":
+      return date;
+    case "week":
+      return startOfIsoWeek(date);
+    case "month":
+      return startOfMonth(date);
+    default: {
+      const _exhaustive: never = periodType;
+      throw new Error(`Unknown period type: ${_exhaustive}`);
+    }
+  }
+}
+
 export function getPeriodContaining(
   date: DateYmd,
   periodType: PeriodType,

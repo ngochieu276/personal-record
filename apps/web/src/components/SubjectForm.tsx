@@ -1,4 +1,12 @@
-import { KPI_TYPES, PERIOD_TYPES, periodLabel, toDateYmd, type KpiType, type PeriodType } from "@personal-record/shared";
+import {
+  alignToPeriodStart,
+  KPI_TYPES,
+  PERIOD_TYPES,
+  periodLabel,
+  toDateYmd,
+  type KpiType,
+  type PeriodType,
+} from "@personal-record/shared";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,14 +31,22 @@ type Props = {
   onDone?: () => void;
 };
 
+function periodStartFor(date: string, periodType: PeriodType): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  }
+  return alignToPeriodStart(date, periodType);
+}
+
 export function SubjectForm({ projectId, timezone, initial, onDone }: Props) {
   const utils = trpc.useUtils();
+  const defaultPeriod: PeriodType = initial?.periodType ?? "week";
   const [values, setValues] = useState<Values>({
     name: initial?.name ?? "",
     kpiTarget: initial?.kpiTarget ?? "",
-    kpiType: initial?.kpiType ?? "totalTime",
-    periodType: initial?.periodType ?? "week",
-    startDate: initial?.startDate ?? toDateYmd(new Date(), timezone),
+    kpiType: initial?.kpiType ?? "totalRepeat",
+    periodType: defaultPeriod,
+    startDate: periodStartFor(initial?.startDate ?? toDateYmd(new Date(), timezone), defaultPeriod),
     link: initial?.link ?? "",
   });
 
@@ -75,7 +91,7 @@ export function SubjectForm({ projectId, timezone, initial, onDone }: Props) {
           kpiTarget,
           kpiType: values.kpiType,
           periodType: values.periodType,
-          startDate: values.startDate,
+          startDate: periodStartFor(values.startDate, values.periodType),
           link: values.link || undefined,
         };
         if (initial?.id) {
@@ -107,7 +123,17 @@ export function SubjectForm({ projectId, timezone, initial, onDone }: Props) {
         </div>
         <div>
           <Label>Period</Label>
-          <Select value={values.periodType} onValueChange={(value) => set("periodType", value as PeriodType)}>
+          <Select
+            value={values.periodType}
+            onValueChange={(value) => {
+              const periodType = value as PeriodType;
+              setValues((current) => ({
+                ...current,
+                periodType,
+                startDate: periodStartFor(current.startDate, periodType),
+              }));
+            }}
+          >
             <SelectTrigger className="mt-2">
               <SelectValue />
             </SelectTrigger>
@@ -134,14 +160,23 @@ export function SubjectForm({ projectId, timezone, initial, onDone }: Props) {
           />
         </div>
         <div>
-          <Label htmlFor="start-date">Start date</Label>
+          <Label htmlFor="start-date">Period start</Label>
           <Input
             id="start-date"
             className="mt-2"
             type="date"
             value={values.startDate}
-            onChange={(e) => set("startDate", e.target.value)}
+            onChange={(e) => set("startDate", periodStartFor(e.target.value, values.periodType))}
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Always the first day of the period
+            {values.periodType === "week"
+              ? " (Monday)"
+              : values.periodType === "month"
+                ? " (1st)"
+                : ""}
+            .
+          </p>
         </div>
       </div>
       <div>

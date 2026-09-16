@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  alignToPeriodStart,
   computeStreak,
   evaluateKpi,
   formatAmount,
@@ -10,6 +11,18 @@ import {
   parseAmountInput,
   sumLogsInPeriod,
 } from "./period.ts";
+
+describe("alignToPeriodStart", () => {
+  it("keeps a day or two-week pick as the period start", () => {
+    expect(alignToPeriodStart("2026-09-16", "day")).toBe("2026-09-16");
+    expect(alignToPeriodStart("2026-09-16", "twoWeek")).toBe("2026-09-16");
+  });
+
+  it("snaps a week pick to Monday and a month pick to the 1st", () => {
+    expect(alignToPeriodStart("2026-09-16", "week")).toBe("2026-09-14");
+    expect(alignToPeriodStart("2026-09-16", "month")).toBe("2026-09-01");
+  });
+});
 
 describe("getPeriodContaining", () => {
   it("uses a single calendar day", () => {

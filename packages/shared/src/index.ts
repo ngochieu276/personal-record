@@ -17,6 +17,7 @@ export {
   diffDays,
   toDateYmd,
   prismaDateToYmd,
+  alignToPeriodStart,
   getPeriodContaining,
   getNextPeriod,
   isDateInPeriod,

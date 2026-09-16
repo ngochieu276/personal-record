@@ -1,4 +1,4 @@
-import { KPI_TYPES, PERIOD_TYPES } from "@personal-record/shared";
+import { alignToPeriodStart, KPI_TYPES, PERIOD_TYPES, prismaDateToYmd, type PeriodType } from "@personal-record/shared";
 import { z } from "zod";
 import { closePastPeriods } from "../../domain/closePastPeriods.ts";
 import { getSubjectView } from "../../domain/subjectView.ts";
@@ -91,7 +91,7 @@ export const subjectRouter = router({
           kpiTarget: input.kpiTarget,
           kpiType: input.kpiType,
           periodType: input.periodType,
-          startDate: new Date(`${input.startDate}T00:00:00.000Z`),
+          startDate: new Date(`${alignToPeriodStart(input.startDate, input.periodType)}T00:00:00.000Z`),
           link: input.link,
         },
       });
@@ -111,6 +111,12 @@ export const subjectRouter = router({
       const kpiChanged =
         input.kpiTarget !== undefined && input.kpiTarget !== subject.kpiTarget;
 
+      const periodType = (input.periodType ?? subject.periodType) as PeriodType;
+      const startDateYmd =
+        input.startDate !== undefined || input.periodType !== undefined
+          ? alignToPeriodStart(input.startDate ?? prismaDateToYmd(subject.startDate), periodType)
+          : undefined;
+
       const updated = await ctx.prisma.subject.update({
         where: { id: subject.id },
         data: {
@@ -118,9 +124,7 @@ export const subjectRouter = router({
           kpiTarget: input.kpiTarget,
           kpiType: input.kpiType,
           periodType: input.periodType,
-          startDate: input.startDate
-            ? new Date(`${input.startDate}T00:00:00.000Z`)
-            : undefined,
+          startDate: startDateYmd ? new Date(`${startDateYmd}T00:00:00.000Z`) : undefined,
           link: input.link === undefined ? undefined : input.link,
         },
       });
