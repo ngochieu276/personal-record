@@ -33,7 +33,10 @@ export function toDateYmd(date: Date, timeZone: string): DateYmd {
   }).format(date);
 }
 
-export function prismaDateToYmd(date: Date): DateYmd {
+export function prismaDateToYmd(date: Date | string): DateYmd {
+  if (typeof date === "string") {
+    return date.slice(0, 10);
+  }
   return date.toISOString().slice(0, 10);
 }
 

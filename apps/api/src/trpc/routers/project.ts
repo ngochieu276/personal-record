@@ -1,11 +1,10 @@
 import { z } from "zod";
+import { hydrateProject, projectWithSubjectCount } from "../../prisma/models.ts";
 import { badRequest, notFound } from "../trpc.ts";
 import { publicProcedure, router } from "../trpc.ts";
 
-async function ownedProject(ctx: { prisma: typeof import("../../db.ts").prisma; user: { id: string } }, id: string) {
-  const project = await ctx.prisma.project.findFirst({
-    where: { id, userId: ctx.user.id },
-  });
+async function ownedProject(ctx: { db: typeof import("../../prisma/db.ts").db; user: { id: string } }, id: string) {
+  const project = await ctx.db.orm.public.Project.where({ id, userId: ctx.user.id }).first();
   if (!project) {
     notFound("Project not found");
   }
@@ -14,19 +13,18 @@ async function ownedProject(ctx: { prisma: typeof import("../../db.ts").prisma; 
 
 export const projectRouter = router({
   list: publicProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.project.findMany({
-      where: { userId: ctx.user.id },
-      orderBy: { createdAt: "asc" },
-      include: {
-        _count: { select: { subjects: true } },
-      },
-    });
+    const rows = await ctx.db.orm.public.Project.where({ userId: ctx.user.id })
+      .include("subjects", (subjects) => subjects.count())
+      .orderBy((project) => project.createdAt.asc())
+      .all();
+
+    return rows.map(({ subjects, ...project }) => ({
+      ...hydrateProject(project),
+      _count: { subjects },
+    }));
   }),
   get: publicProcedure.input(z.object({ id: z.string().uuid() })).query(async ({ ctx, input }) => {
-    const project = await ctx.prisma.project.findFirst({
-      where: { id: input.id, userId: ctx.user.id },
-      include: { _count: { select: { subjects: true } } },
-    });
+    const project = await projectWithSubjectCount(input.id, ctx.user.id);
     if (!project) {
       notFound("Project not found");
     }
@@ -35,31 +33,33 @@ export const projectRouter = router({
   create: publicProcedure
     .input(z.object({ name: z.string().trim().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
-      return ctx.prisma.project.create({
-        data: { name: input.name, userId: ctx.user.id },
+      const project = await ctx.db.orm.public.Project.create({
+        name: input.name,
+        userId: ctx.user.id,
       });
+      return hydrateProject(project);
     }),
   update: publicProcedure
     .input(z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(80) }))
     .mutation(async ({ ctx, input }) => {
       await ownedProject(ctx, input.id);
-      return ctx.prisma.project.update({
-        where: { id: input.id },
-        data: { name: input.name },
+      const project = await ctx.db.orm.public.Project.where({ id: input.id }).update({
+        name: input.name,
       });
+      if (!project) {
+        notFound("Project not found");
+      }
+      return hydrateProject(project);
     }),
   delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    const project = await ctx.prisma.project.findFirst({
-      where: { id: input.id, userId: ctx.user.id },
-      include: { _count: { select: { subjects: true } } },
-    });
+    const project = await projectWithSubjectCount(input.id, ctx.user.id);
     if (!project) {
       notFound("Project not found");
     }
     if (project._count.subjects > 0) {
       badRequest("Delete or move this project's subjects first.");
     }
-    await ctx.prisma.project.delete({ where: { id: input.id } });
+    await ctx.db.orm.public.Project.where({ id: input.id }).delete();
     return { ok: true };
   }),
 });

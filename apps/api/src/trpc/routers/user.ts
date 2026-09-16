@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hydrateUser } from "../../prisma/models.ts";
 import { badRequest, publicProcedure, router } from "../trpc.ts";
 
 const timeZoneSchema = z.string().min(1).max(64);
@@ -23,13 +24,14 @@ export const userRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       assertTimeZone(input.timezone);
-      return ctx.prisma.user.update({
-        where: { id: ctx.user.id },
-        data: {
-          name: input.name,
-          email: input.email,
-          timezone: input.timezone,
-        },
+      const user = await ctx.db.orm.public.User.where({ id: ctx.user.id }).update({
+        name: input.name,
+        email: input.email,
+        timezone: input.timezone,
       });
+      if (!user) {
+        badRequest("Could not update profile");
+      }
+      return hydrateUser(user);
     }),
 });

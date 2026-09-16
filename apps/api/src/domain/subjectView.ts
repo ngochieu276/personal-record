@@ -6,16 +6,17 @@ import {
   toDateYmd,
   type PeriodType,
 } from "@personal-record/shared";
-import type { PrismaClient, Subject } from "@prisma/client";
+import type { Db } from "../prisma/db.ts";
+import { asDate, hydrateSubject, type SubjectRow } from "../prisma/models.ts";
 import { closePastPeriods } from "./closePastPeriods.ts";
 
 export async function getSubjectView(
-  prisma: PrismaClient,
-  subject: Subject,
+  db: Db,
+  subject: SubjectRow,
   timeZone: string,
   now = new Date(),
 ) {
-  await closePastPeriods(prisma, subject, timeZone, now);
+  await closePastPeriods(db, subject, timeZone, now);
 
   const today = toDateYmd(now, timeZone);
   const startDate = prismaDateToYmd(subject.startDate);
@@ -25,27 +26,38 @@ export async function getSubjectView(
     : getPeriodContaining(today, subject.periodType as PeriodType, startDate);
 
   const [logs, events, kpiChanges, project] = await Promise.all([
-    prisma.progressLog.findMany({
-      where: { subjectId: subject.id },
-      orderBy: { loggedAt: "desc" },
-    }),
-    prisma.subjectEvent.findMany({
-      where: { subjectId: subject.id },
-      orderBy: { periodStart: "desc" },
-    }),
-    prisma.kpiChange.findMany({
-      where: { subjectId: subject.id },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.project.findUniqueOrThrow({ where: { id: subject.projectId } }),
+    db.orm.public.ProgressLog.where({ subjectId: subject.id })
+      .orderBy((log) => log.loggedAt.desc())
+      .all(),
+    db.orm.public.SubjectEvent.where({ subjectId: subject.id })
+      .orderBy((event) => event.periodStart.desc())
+      .all(),
+    db.orm.public.KpiChange.where({ subjectId: subject.id })
+      .orderBy((change) => change.createdAt.desc())
+      .all(),
+    db.orm.public.Project.where({ id: subject.projectId }).first(),
   ]);
 
-  const current = openPeriod ? sumLogsInPeriod(logs, openPeriod, timeZone) : 0;
+  if (!project) {
+    throw new Error("Project not found for subject");
+  }
+
+  const logLikes = logs.map((log) => ({
+    amount: log.amount,
+    loggedAt: asDate(log.loggedAt),
+  }));
+  const current = openPeriod ? sumLogsInPeriod(logLikes, openPeriod, timeZone) : 0;
   const periodLogs = openPeriod
-    ? logs.filter((log) => {
-        const ymd = toDateYmd(log.loggedAt, timeZone);
-        return ymd >= openPeriod.start && ymd <= openPeriod.end;
-      })
+    ? logs
+        .filter((log) => {
+          const ymd = toDateYmd(asDate(log.loggedAt), timeZone);
+          return ymd >= openPeriod.start && ymd <= openPeriod.end;
+        })
+        .map((log) => ({
+          ...log,
+          loggedAt: asDate(log.loggedAt),
+          createdAt: asDate(log.createdAt),
+        }))
     : [];
 
   const streak = computeStreak(
@@ -59,7 +71,7 @@ export async function getSubjectView(
     ...events.map((event) => ({
       kind: "event" as const,
       id: event.id,
-      at: event.createdAt,
+      at: asDate(event.createdAt),
       periodStart: prismaDateToYmd(event.periodStart),
       periodEnd: prismaDateToYmd(event.periodEnd),
       status: event.status,
@@ -69,16 +81,19 @@ export async function getSubjectView(
     ...kpiChanges.map((change) => ({
       kind: "kpi-change" as const,
       id: change.id,
-      at: change.createdAt,
+      at: asDate(change.createdAt),
       oldValue: change.oldValue,
       newValue: change.newValue,
     })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
   return {
-    ...subject,
-    startDate: startDate,
-    project,
+    ...hydrateSubject(subject),
+    startDate,
+    project: {
+      ...project,
+      createdAt: asDate(project.createdAt),
+    },
     notStarted,
     openPeriod,
     current,

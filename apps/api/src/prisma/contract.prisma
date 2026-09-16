@@ -1,0 +1,106 @@
+// use prisma-8
+// Inferred from the live schema; @@map keeps Prisma 6 quoted PascalCase table names.
+
+namespace public {
+  native_enum KpiType {
+    totalTime   = "totalTime"
+    totalRepeat = "totalRepeat"
+  }
+
+  native_enum PeriodType {
+    day     = "day"
+    week    = "week"
+    twoWeek = "twoWeek"
+    month   = "month"
+  }
+
+  native_enum SubjectEventStatus {
+    finish = "finish"
+    miss   = "miss"
+  }
+
+  model User {
+    id        String       @id(map: "User_pkey") @default(uuid())
+    name      String
+    email     String
+    timezone  String       @default("Asia/Bangkok")
+    createdAt TimestampString(3) @default(now())
+    projects  Project[]
+
+    @@index([email], map: "User_email_key", unique: true)
+    @@map("User")
+  }
+
+  model Project {
+    id        String       @id(map: "Project_pkey") @default(uuid())
+    userId    String
+    name      String
+    createdAt TimestampString(3) @default(now())
+    subjects  Subject[]
+    user      User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Project_userId_fkey")
+
+    @@index([userId], map: "Project_userId_idx")
+    @@map("Project")
+  }
+
+  model Subject {
+    id         String              @id(map: "Subject_pkey") @default(uuid())
+    projectId  String
+    name       String
+    kpiTarget  Int
+    kpiType    pg.enum(KpiType)
+    periodType pg.enum(PeriodType)
+    startDate  DateString
+    link       String?
+    createdAt  TimestampString(3)  @default(now())
+    archivedAt TimestampString(3)?
+    kpiChanges KpiChange[]
+    logs       ProgressLog[]
+    events     SubjectEvent[]
+    project    Project             @relation(fields: [projectId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "Subject_projectId_fkey")
+
+    @@index([projectId], map: "Subject_projectId_idx")
+    @@map("Subject")
+  }
+
+  model KpiChange {
+    id        String       @id(map: "KpiChange_pkey") @default(uuid())
+    subjectId String
+    oldValue  Int
+    newValue  Int
+    createdAt TimestampString(3) @default(now())
+    subject   Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "KpiChange_subjectId_fkey", index: false)
+
+    @@index([subjectId, createdAt], map: "KpiChange_subjectId_createdAt_idx")
+    @@map("KpiChange")
+  }
+
+  model ProgressLog {
+    id        String       @id(map: "ProgressLog_pkey") @default(uuid())
+    subjectId String
+    amount    Int
+    loggedAt  TimestampString(3)
+    note      String?
+    createdAt TimestampString(3) @default(now())
+    subject   Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ProgressLog_subjectId_fkey", index: false)
+
+    @@index([subjectId, loggedAt], map: "ProgressLog_subjectId_loggedAt_idx")
+    @@map("ProgressLog")
+  }
+
+  model SubjectEvent {
+    id          String                      @id(map: "SubjectEvent_pkey") @default(uuid())
+    subjectId   String
+    status      pg.enum(SubjectEventStatus)
+    periodStart DateString
+    periodEnd   DateString
+    achieved    Int
+    kpiSnapshot Int
+    createdAt   TimestampString(3)          @default(now())
+    subject     Subject                     @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "SubjectEvent_subjectId_fkey", index: false)
+
+    @@index([subjectId, periodStart], map: "SubjectEvent_subjectId_periodStart_idx")
+    @@index([subjectId, periodStart], map: "SubjectEvent_subjectId_periodStart_key", unique: true)
+    @@map("SubjectEvent")
+  }
+}

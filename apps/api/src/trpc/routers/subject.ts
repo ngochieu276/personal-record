@@ -2,6 +2,7 @@ import { alignToPeriodStart, KPI_TYPES, PERIOD_TYPES, prismaDateToYmd, type Peri
 import { z } from "zod";
 import { closePastPeriods } from "../../domain/closePastPeriods.ts";
 import { getSubjectView } from "../../domain/subjectView.ts";
+import { nowIso, type SubjectRow } from "../../prisma/models.ts";
 import { badRequest, notFound, publicProcedure, router } from "../trpc.ts";
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -27,13 +28,11 @@ const subjectInput = z.object({
 });
 
 async function ownedSubject(
-  ctx: { prisma: typeof import("../../db.ts").prisma; user: { id: string } },
+  ctx: { db: typeof import("../../prisma/db.ts").db; user: { id: string } },
   id: string,
-) {
-  const subject = await ctx.prisma.subject.findFirst({
-    where: { id, project: { userId: ctx.user.id } },
-  });
-  if (!subject) {
+): Promise<SubjectRow> {
+  const subject = await ctx.db.orm.public.Subject.where({ id }).include("project").first();
+  if (!subject || subject.project.userId !== ctx.user.id) {
     notFound("Subject not found");
   }
   return subject;
@@ -48,35 +47,34 @@ export const subjectRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const project = await ctx.prisma.project.findFirst({
-        where: { id: input.projectId, userId: ctx.user.id },
-      });
+      const project = await ctx.db.orm.public.Project.where({
+        id: input.projectId,
+        userId: ctx.user.id,
+      }).first();
       if (!project) {
         notFound("Project not found");
       }
 
-      const subjects = await ctx.prisma.subject.findMany({
-        where: {
-          projectId: input.projectId,
-          archivedAt: input.includeArchived ? undefined : null,
-        },
-        orderBy: { createdAt: "asc" },
-      });
+      const query = ctx.db.orm.public.Subject.where({ projectId: input.projectId });
+      const subjects = await (input.includeArchived
+        ? query
+        : query.where((subject) => subject.archivedAt.eq(null)))
+        .orderBy((subject) => subject.createdAt.asc())
+        .all();
 
-      return Promise.all(
-        subjects.map((subject) => getSubjectView(ctx.prisma, subject, ctx.user.timezone)),
-      );
+      return Promise.all(subjects.map((subject) => getSubjectView(ctx.db, subject, ctx.user.timezone)));
     }),
   get: publicProcedure.input(z.object({ id: z.string().uuid() })).query(async ({ ctx, input }) => {
     const subject = await ownedSubject(ctx, input.id);
-    return getSubjectView(ctx.prisma, subject, ctx.user.timezone);
+    return getSubjectView(ctx.db, subject, ctx.user.timezone);
   }),
   create: publicProcedure
     .input(subjectInput.extend({ projectId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await ctx.prisma.project.findFirst({
-        where: { id: input.projectId, userId: ctx.user.id },
-      });
+      const project = await ctx.db.orm.public.Project.where({
+        id: input.projectId,
+        userId: ctx.user.id,
+      }).first();
       if (!project) {
         notFound("Project not found");
       }
@@ -84,25 +82,23 @@ export const subjectRouter = router({
         badRequest("Link must start with http:// or https://");
       }
 
-      const subject = await ctx.prisma.subject.create({
-        data: {
-          projectId: input.projectId,
-          name: input.name,
-          kpiTarget: input.kpiTarget,
-          kpiType: input.kpiType,
-          periodType: input.periodType,
-          startDate: new Date(`${alignToPeriodStart(input.startDate, input.periodType)}T00:00:00.000Z`),
-          link: input.link,
-        },
+      const subject = await ctx.db.orm.public.Subject.create({
+        projectId: input.projectId,
+        name: input.name,
+        kpiTarget: input.kpiTarget,
+        kpiType: input.kpiType,
+        periodType: input.periodType,
+        startDate: alignToPeriodStart(input.startDate, input.periodType),
+        link: input.link,
       });
 
-      return getSubjectView(ctx.prisma, subject, ctx.user.timezone);
+      return getSubjectView(ctx.db, subject, ctx.user.timezone);
     }),
   update: publicProcedure
     .input(subjectInput.partial().extend({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const subject = await ownedSubject(ctx, input.id);
-      await closePastPeriods(ctx.prisma, subject, ctx.user.timezone);
+      await closePastPeriods(ctx.db, subject, ctx.user.timezone);
 
       if (input.link && !/^https?:\/\//i.test(input.link)) {
         badRequest("Link must start with http:// or https://");
@@ -117,43 +113,43 @@ export const subjectRouter = router({
           ? alignToPeriodStart(input.startDate ?? prismaDateToYmd(subject.startDate), periodType)
           : undefined;
 
-      const updated = await ctx.prisma.subject.update({
-        where: { id: subject.id },
-        data: {
-          name: input.name,
-          kpiTarget: input.kpiTarget,
-          kpiType: input.kpiType,
-          periodType: input.periodType,
-          startDate: startDateYmd ? new Date(`${startDateYmd}T00:00:00.000Z`) : undefined,
-          link: input.link === undefined ? undefined : input.link,
-        },
+      const updated = await ctx.db.orm.public.Subject.where({ id: subject.id }).update({
+        name: input.name,
+        kpiTarget: input.kpiTarget,
+        kpiType: input.kpiType,
+        periodType: input.periodType,
+        startDate: startDateYmd,
+        link: input.link === undefined ? undefined : input.link,
       });
+      if (!updated) {
+        notFound("Subject not found");
+      }
 
       if (kpiChanged && input.kpiTarget !== undefined) {
-        await ctx.prisma.kpiChange.create({
-          data: {
-            subjectId: subject.id,
-            oldValue: subject.kpiTarget,
-            newValue: input.kpiTarget,
-          },
+        await ctx.db.orm.public.KpiChange.create({
+          subjectId: subject.id,
+          oldValue: subject.kpiTarget,
+          newValue: input.kpiTarget,
         });
       }
 
-      return getSubjectView(ctx.prisma, updated, ctx.user.timezone);
+      return getSubjectView(ctx.db, updated, ctx.user.timezone);
     }),
   archive: publicProcedure
     .input(z.object({ id: z.string().uuid(), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const subject = await ownedSubject(ctx, input.id);
-      const updated = await ctx.prisma.subject.update({
-        where: { id: subject.id },
-        data: { archivedAt: input.archived ? new Date() : null },
+      const updated = await ctx.db.orm.public.Subject.where({ id: subject.id }).update({
+        archivedAt: input.archived ? nowIso() : null,
       });
-      return getSubjectView(ctx.prisma, updated, ctx.user.timezone);
+      if (!updated) {
+        notFound("Subject not found");
+      }
+      return getSubjectView(ctx.db, updated, ctx.user.timezone);
     }),
   delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     await ownedSubject(ctx, input.id);
-    await ctx.prisma.subject.delete({ where: { id: input.id } });
+    await ctx.db.orm.public.Subject.where({ id: input.id }).delete();
     return { ok: true };
   }),
 });

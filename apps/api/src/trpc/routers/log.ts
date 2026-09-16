@@ -7,23 +7,22 @@ import {
 import { z } from "zod";
 import { closePastPeriods } from "../../domain/closePastPeriods.ts";
 import { getSubjectView } from "../../domain/subjectView.ts";
+import { asDate, asTimestamp, type SubjectRow } from "../../prisma/models.ts";
 import { badRequest, notFound, publicProcedure, router } from "../trpc.ts";
 
 async function ownedSubject(
-  ctx: { prisma: typeof import("../../db.ts").prisma; user: { id: string; timezone: string } },
+  ctx: { db: typeof import("../../prisma/db.ts").db; user: { id: string; timezone: string } },
   id: string,
-) {
-  const subject = await ctx.prisma.subject.findFirst({
-    where: { id, project: { userId: ctx.user.id } },
-  });
-  if (!subject) {
+): Promise<SubjectRow> {
+  const subject = await ctx.db.orm.public.Subject.where({ id }).include("project").first();
+  if (!subject || subject.project.userId !== ctx.user.id) {
     notFound("Subject not found");
   }
   return subject;
 }
 
 function assertLogInOpenPeriod(
-  subject: { startDate: Date; periodType: PeriodType },
+  subject: { startDate: string; periodType: PeriodType },
   loggedAt: Date,
   timeZone: string,
 ) {
@@ -54,7 +53,7 @@ export const logRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const subject = await ownedSubject(ctx, input.subjectId);
-      await closePastPeriods(ctx.prisma, subject, ctx.user.timezone);
+      await closePastPeriods(ctx.db, subject, ctx.user.timezone);
       const loggedAt = input.loggedAt ?? new Date();
       assertLogInOpenPeriod(
         { startDate: subject.startDate, periodType: subject.periodType },
@@ -62,16 +61,14 @@ export const logRouter = router({
         ctx.user.timezone,
       );
 
-      await ctx.prisma.progressLog.create({
-        data: {
-          subjectId: subject.id,
-          amount: input.amount,
-          loggedAt,
-          note: input.note || null,
-        },
+      await ctx.db.orm.public.ProgressLog.create({
+        subjectId: subject.id,
+        amount: input.amount,
+        loggedAt: asTimestamp(loggedAt),
+        note: input.note || null,
       });
 
-      return getSubjectView(ctx.prisma, subject, ctx.user.timezone);
+      return getSubjectView(ctx.db, subject, ctx.user.timezone);
     }),
   update: publicProcedure
     .input(
@@ -82,37 +79,30 @@ export const logRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const log = await ctx.prisma.progressLog.findFirst({
-        where: { id: input.id, subject: { project: { userId: ctx.user.id } } },
-        include: { subject: true },
-      });
+      const log = await ctx.db.orm.public.ProgressLog.where({ id: input.id }).include("subject").first();
       if (!log) {
         notFound("Log not found");
       }
-      await closePastPeriods(ctx.prisma, log.subject, ctx.user.timezone);
-      assertLogInOpenPeriod(log.subject, log.loggedAt, ctx.user.timezone);
+      const subject = await ownedSubject(ctx, log.subjectId);
+      await closePastPeriods(ctx.db, subject, ctx.user.timezone);
+      assertLogInOpenPeriod(subject, asDate(log.loggedAt), ctx.user.timezone);
 
-      await ctx.prisma.progressLog.update({
-        where: { id: log.id },
-        data: {
-          amount: input.amount,
-          note: input.note === undefined ? undefined : input.note,
-        },
+      await ctx.db.orm.public.ProgressLog.where({ id: log.id }).update({
+        amount: input.amount,
+        note: input.note === undefined ? undefined : input.note,
       });
 
-      return getSubjectView(ctx.prisma, log.subject, ctx.user.timezone);
+      return getSubjectView(ctx.db, subject, ctx.user.timezone);
     }),
   delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
-    const log = await ctx.prisma.progressLog.findFirst({
-      where: { id: input.id, subject: { project: { userId: ctx.user.id } } },
-      include: { subject: true },
-    });
+    const log = await ctx.db.orm.public.ProgressLog.where({ id: input.id }).first();
     if (!log) {
       notFound("Log not found");
     }
-    await closePastPeriods(ctx.prisma, log.subject, ctx.user.timezone);
-    assertLogInOpenPeriod(log.subject, log.loggedAt, ctx.user.timezone);
-    await ctx.prisma.progressLog.delete({ where: { id: log.id } });
-    return getSubjectView(ctx.prisma, log.subject, ctx.user.timezone);
+    const subject = await ownedSubject(ctx, log.subjectId);
+    await closePastPeriods(ctx.db, subject, ctx.user.timezone);
+    assertLogInOpenPeriod(subject, asDate(log.loggedAt), ctx.user.timezone);
+    await ctx.db.orm.public.ProgressLog.where({ id: log.id }).delete();
+    return getSubjectView(ctx.db, subject, ctx.user.timezone);
   }),
 });

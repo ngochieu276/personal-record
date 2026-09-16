@@ -8,8 +8,7 @@
     "test": "pnpm --filter @personal-record/shared test",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:migrate": "pnpm --filter @personal-record/api exec prisma migrate deploy",
-    "db:seed": "pnpm --filter @personal-record/api prisma:seed",
-    "db:studio": "pnpm --filter @personal-record/api prisma:studio"
+    "db:migrate": "pnpm --filter @personal-record/api exec prisma db migrate",
+    "db:seed": "pnpm --filter @personal-record/api prisma:seed"
   }
 }

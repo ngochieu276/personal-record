@@ -6,15 +6,12 @@ import {
   toDateYmd,
   type PeriodType,
 } from "@personal-record/shared";
-import type { PrismaClient, Subject } from "@prisma/client";
-
-function ymdToPrismaDate(ymd: string): Date {
-  return new Date(`${ymd}T00:00:00.000Z`);
-}
+import type { Db } from "../prisma/db.ts";
+import { asDate, type SubjectRow } from "../prisma/models.ts";
 
 export async function closePastPeriods(
-  prisma: PrismaClient,
-  subject: Subject,
+  db: Db,
+  subject: SubjectRow,
   timeZone: string,
   now = new Date(),
 ): Promise<void> {
@@ -30,13 +27,9 @@ export async function closePastPeriods(
     return;
   }
 
-  const existing = await prisma.subjectEvent.findMany({
-    where: {
-      subjectId: subject.id,
-      periodStart: { in: closable.map((period) => ymdToPrismaDate(period.start)) },
-    },
-    select: { periodStart: true },
-  });
+  const existing = await db.orm.public.SubjectEvent.where({ subjectId: subject.id })
+    .select("periodStart")
+    .all();
 
   const existingStarts = new Set(existing.map((event) => prismaDateToYmd(event.periodStart)));
   const pending = closable.filter((period) => !existingStarts.has(period.start));
@@ -45,37 +38,42 @@ export async function closePastPeriods(
     return;
   }
 
-  const logs = await prisma.progressLog.findMany({
-    where: { subjectId: subject.id },
-    select: { amount: true, loggedAt: true },
-  });
+  const logs = await db.orm.public.ProgressLog.where({ subjectId: subject.id })
+    .select("amount", "loggedAt")
+    .all();
+
+  const logLikes = logs.map((log) => ({
+    amount: log.amount,
+    loggedAt: asDate(log.loggedAt),
+  }));
 
   for (const period of pending) {
-    const achieved = sumLogsInPeriod(logs, period, timeZone);
-    await prisma.subjectEvent.create({
-      data: {
-        subjectId: subject.id,
-        status: evaluateKpi(achieved, subject.kpiTarget),
-        periodStart: ymdToPrismaDate(period.start),
-        periodEnd: ymdToPrismaDate(period.end),
-        achieved,
-        kpiSnapshot: subject.kpiTarget,
-      },
+    const achieved = sumLogsInPeriod(logLikes, period, timeZone);
+    await db.orm.public.SubjectEvent.create({
+      subjectId: subject.id,
+      status: evaluateKpi(achieved, subject.kpiTarget),
+      periodStart: period.start,
+      periodEnd: period.end,
+      achieved,
+      kpiSnapshot: subject.kpiTarget,
     });
   }
 }
 
 export async function closePastPeriodsForUser(
-  prisma: PrismaClient,
+  db: Db,
   userId: string,
   timeZone: string,
   now = new Date(),
 ): Promise<void> {
-  const subjects = await prisma.subject.findMany({
-    where: { project: { userId }, archivedAt: null },
-  });
+  const subjects = await db.orm.public.Subject.include("project")
+    .where((subject) => subject.archivedAt.eq(null))
+    .all();
 
   for (const subject of subjects) {
-    await closePastPeriods(prisma, subject, timeZone, now);
+    if (subject.project.userId !== userId) {
+      continue;
+    }
+    await closePastPeriods(db, subject, timeZone, now);
   }
 }
