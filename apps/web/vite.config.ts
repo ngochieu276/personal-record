@@ -7,7 +7,6 @@ import { defineConfig } from "vite";
 const root = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
-  envDir: path.resolve(root, "../.."),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
