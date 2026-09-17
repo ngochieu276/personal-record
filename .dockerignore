@@ -1,0 +1,13 @@
+.git
+.github
+.DS_Store
+**/.env
+**/.env.local
+**/node_modules
+**/dist
+**/build
+**/*.log
+.turbo
+apps/web/src
+apps/web/public
+*.md

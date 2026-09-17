@@ -9,3 +9,4 @@ build
 apps/api/generated
 apps/web/dist
 packages/shared/dist
+.fly

@@ -1,7 +1,4 @@
-const DEFAULT_WEB_ORIGINS = [
-  "http://localhost:5173",
-  "https://web-git-main-nguyen-ngoc-hieus-projects.vercel.app",
-];
+const DEFAULT_WEB_ORIGINS = ["http://localhost:5173"];
 
 function toOrigin(value: string) {
   const trimmed = value.trim();
