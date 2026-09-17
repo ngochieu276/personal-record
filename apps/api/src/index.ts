@@ -15,8 +15,12 @@ const server = Fastify({
 });
 
 await server.register(cors, {
-  origin: origins,
+  origin: (origin, callback) => {
+    callback(null, !origin || origins.includes(origin));
+  },
   credentials: true,
+  allowedHeaders: ["Content-Type", "trpc-accept", "authorization"],
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 });
 
 await server.register(fastifyTRPCPlugin, {
